@@ -15,8 +15,6 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-let isGtxOffline = false;
-
 const wordDictionaries: Record<string, Record<string, string>> = {
   es: {
     "el": "the", "la": "the", "los": "the", "las": "the", "un": "a", "una": "a", "unos": "some", "unas": "some",
@@ -252,11 +250,6 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
     return text;
   }
 
-  // If already flagged as offline, translate immediately locally (0ms)
-  if (isGtxOffline) {
-    return translateOffline(text, sl, tl);
-  }
-
   // Divide text into manageable chunks of max 1800 characters to prevent URL size overflow
   const maxChunkSize = 1800;
   const chunks: string[] = [];
@@ -264,14 +257,11 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
 
   const lines = text.split("\n");
   for (const line of lines) {
-    // If a single line is too long, we must split it further (by sentence or words)
     if (line.length > maxChunkSize) {
       if (currentChunk) {
         chunks.push(currentChunk);
         currentChunk = "";
       }
-      
-      // Split the long line into sentences or fragments
       const sentences = line.match(/[^.!?]+[.!?]+(\s+|$)|.+/g) || [line];
       for (const sentence of sentences) {
         if ((currentChunk + sentence).length > maxChunkSize) {
@@ -284,7 +274,6 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
         }
       }
     } else {
-      // Line fits within maxChunkSize
       if ((currentChunk + "\n" + line).length > maxChunkSize) {
         if (currentChunk) {
           chunks.push(currentChunk);
@@ -299,45 +288,64 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
     chunks.push(currentChunk);
   }
 
-  // Fetch translations for all chunks with a short timeout, failing over to offline engine gracefully
-  const translatedChunks = await Promise.all(
-    chunks.map(async (chunk) => {
-      if (!chunk.trim()) return chunk;
-      if (isGtxOffline) {
-        return translateOffline(chunk, sl, tl);
-      }
-      
-      try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(chunk)}`;
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+  // Try Google Translate first, then MyMemory, then offline dictionary fallback
+  const translateChunk = async (chunk: string): Promise<string> => {
+    if (!chunk.trim()) return chunk;
 
-        const res = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          }
-        });
-        
-        clearTimeout(timeoutId);
+    // 1. Try Google Translate (free endpoint)
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(chunk)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        if (!res.ok) {
-          throw new Error(`Google Translate API returned status ${res.status}`);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data[0]) {
-          return data[0].map((item: any) => item[0] || "").join("");
+          const translated = data[0].map((item: any) => item[0] || "").join("");
+          if (translated && translated.trim()) return translated;
         }
-        return chunk;
-      } catch (err: any) {
-        console.warn("Switching to high-fidelity offline translation engine due to network restriction:", err.message || err);
-        isGtxOffline = true; // Flag offline to bypass network for all subsequent chunks instantly
-        return translateOffline(chunk, sl, tl);
       }
-    })
-  );
+      throw new Error(`Google: ${res.status}`);
+    } catch (err: any) {
+      console.warn("Google Translate failed:", err.message || err);
+    }
 
+    // 2. Try MyMemory (free, reliable from server environments)
+    try {
+      const langPair = `${sl === "auto" ? "autodetect" : sl}|${tl}`;
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${langPair}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.responseData && data.responseData.translatedText) {
+          const translated = decodeURIComponent(data.responseData.translatedText);
+          if (translated && translated.trim() && translated !== chunk) return translated;
+        }
+      }
+      throw new Error(`MyMemory: ${res.status}`);
+    } catch (err: any) {
+      console.warn("MyMemory failed:", err.message || err);
+    }
+
+    // 3. Fall back to offline dictionary
+    console.warn("All online APIs failed. Using offline dictionary.");
+    return translateOffline(chunk, sl, tl);
+  };
+
+  const translatedChunks = await Promise.all(chunks.map(translateChunk));
   return translatedChunks.join("\n");
 }
 

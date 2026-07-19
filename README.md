@@ -68,27 +68,6 @@ Translation is available to/from any language supported by Google Translate. Off
 | `npm run lint`    | Type-check with TypeScript         |
 | `npm run clean`   | Remove dist/ and build artifacts   |
 
-## Deploy on Render
-
-1. Push this repo to GitHub
-2. Go to [render.com](https://render.com) → **New +** → **Web Service**
-3. Connect your GitHub repo
-4. Use these settings:
-
-   | Setting | Value |
-   |---------|-------|
-   | **Name** | `linguist` |
-   | **Region** | Choose closest |
-   | **Branch** | `main` |
-   | **Runtime** | `Node` |
-   | **Build Command** | `npm install && npm run build` |
-   | **Start Command** | `npm start` |
-   | **Plan** | **Free** |
-
-5. Click **Create Web Service**
-
-It'll deploy in a few minutes. Free tier spins down after 15 min of inactivity — first request after idle takes ~30s to wake up.
-
 ## Tech Stack
 
 - **Frontend:** React 19, Vite, Tailwind CSS 4, Lucide icons

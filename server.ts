@@ -318,31 +318,51 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
       console.warn("Google Translate failed:", err.message || err);
     }
 
-    // 2. Try MyMemory (free, reliable from server environments)
-    try {
-      const langPair = `${sl === "auto" ? "autodetect" : sl}|${tl}`;
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${langPair}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+    // 2. Try MyMemory — needs explicit source language, so try French/Spanish/German/Italian
+    const candidateSources = sl === "auto"
+      ? ["fr", "es", "de", "it", "pt", "la", "nl", "ru", "ja", "zh", "ko", "ar"]
+      : [sl];
 
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
+    for (const candidateSrc of candidateSources) {
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${candidateSrc}|${tl}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.responseData && data.responseData.translatedText) {
-          const translated = decodeURIComponent(data.responseData.translatedText);
-          if (translated && translated.trim() && translated !== chunk) return translated;
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.responseData && data.responseData.translatedText) {
+            const translated = decodeURIComponent(data.responseData.translatedText);
+            // MyMemory returns a quot-tagged version on mismatch — filter those out
+            if (
+              translated &&
+              translated.trim() &&
+              translated !== chunk &&
+              !/INVALID/i.test(translated) &&
+              !/MYMEMORY WARNING/i.test(translated)
+            ) {
+              console.log(`MyMemory succeeded with source=${candidateSrc}`);
+              return translated;
+            }
+          }
         }
+      } catch (err: any) {
+        // try next candidate
       }
-      throw new Error(`MyMemory: ${res.status}`);
-    } catch (err: any) {
-      console.warn("MyMemory failed:", err.message || err);
     }
 
-    // 3. Fall back to offline dictionary
+    // 3. Fall back to offline dictionary (use sl if known, else try fr/es/de/it)
     console.warn("All online APIs failed. Using offline dictionary.");
-    return translateOffline(chunk, sl, tl);
+    const offlineSources = sl === "auto" ? ["fr", "es", "de", "it", "la"] : [sl];
+    for (const candidateSrc of offlineSources) {
+      const result = translateOffline(chunk, candidateSrc, tl);
+      // If at least some words changed, accept this result
+      if (result !== chunk) return result;
+    }
+    return chunk;
   };
 
   const translatedChunks = await Promise.all(chunks.map(translateChunk));

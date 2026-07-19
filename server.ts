@@ -310,9 +310,8 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
       try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(chunk)}`;
         
-        // 1200ms abort timeout to prevent freezing the request on firewall-blocked containers
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const res = await fetch(url, {
           signal: controller.signal,

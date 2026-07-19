@@ -8,6 +8,7 @@ import {
 import Dropzone from "./components/Dropzone";
 import Reader from "./components/Reader";
 import HistoryList from "./components/HistoryList";
+import AdUnit from "./components/AdUnit";
 import { 
   Cpu, 
   ShieldCheck, 
@@ -300,18 +301,21 @@ export default function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      <footer className="px-6 md:px-8 py-3 bg-[#0A0A0A] border-t border-white/5 flex justify-between items-center text-[10px] text-zinc-500 shrink-0">
-        <div className="flex gap-6 items-center tracking-widest">
-          <div className="flex items-center gap-2 text-zinc-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-md shadow-green-500/50"></span>
-            SYSTEMS NOMINAL
+      <footer className="bg-[#0A0A0A] border-t border-white/5 shrink-0">
+        <div className="px-6 md:px-8 py-3 flex justify-between items-center text-[10px] text-zinc-500">
+          <div className="flex gap-6 items-center tracking-widest">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-md shadow-green-500/50"></span>
+              SYSTEMS NOMINAL
+            </div>
+            <span className="hidden sm:inline border-l border-zinc-800 pl-6 text-zinc-600">ENCRYPTED END-TO-END</span>
           </div>
-          <span className="hidden sm:inline border-l border-zinc-800 pl-6 text-zinc-600">ENCRYPTED END-TO-END</span>
+          <div className="flex gap-4 font-mono">
+            <span>v2.4.0-Stable</span>
+            <span>Help Center</span>
+          </div>
         </div>
-        <div className="flex gap-4 font-mono">
-          <span>v2.4.0-Stable</span>
-          <span>Help Center</span>
-        </div>
+        <AdUnit slot="0000000000" format="horizontal" className="border-t border-white/5 py-2 flex justify-center" />
       </footer>
     </div>
   );

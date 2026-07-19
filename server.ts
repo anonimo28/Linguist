@@ -15,6 +15,8 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+let isGtxOffline = false;
+
 const wordDictionaries: Record<string, Record<string, string>> = {
   es: {
     "el": "the", "la": "the", "los": "the", "las": "the", "un": "a", "una": "a", "unos": "some", "unas": "some",
@@ -99,7 +101,40 @@ const wordDictionaries: Record<string, Record<string, string>> = {
   }
 };
 
+// Detect source language from text using dictionary keyword matching
+function detectLanguage(text: string): string {
+  const words = text.toLowerCase().match(/[a-zà-ÿ]+/g) || [];
+  if (words.length === 0) return "en";
+
+  const scores: Record<string, number> = {};
+  for (const lang of Object.keys(wordDictionaries)) {
+    const dict = wordDictionaries[lang];
+    let score = 0;
+    for (const w of words) {
+      if (dict[w]) score += 1;
+    }
+    scores[lang] = score;
+  }
+
+  // Pick the language with the most dictionary hits
+  let best = "en";
+  let bestScore = 0;
+  for (const [lang, score] of Object.entries(scores)) {
+    if (score > bestScore) {
+      bestScore = score;
+      best = lang;
+    }
+  }
+  return bestScore > 0 ? best : "en";
+}
+
 function translateOffline(text: string, src: string, tgt: string): string {
+  // Auto-detect source language if not specified
+  if (src === "auto") {
+    src = detectLanguage(text);
+    if (src === tgt) return text;
+  }
+
   if (src === tgt) return text;
 
   const getWordTranslation = (word: string): string => {
@@ -250,6 +285,11 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
     return text;
   }
 
+  // If already flagged as offline, translate immediately locally (0ms per chunk)
+  if (isGtxOffline) {
+    return translateOffline(text, sl, tl);
+  }
+
   // Divide text into manageable chunks of max 1800 characters to prevent URL size overflow
   const maxChunkSize = 1800;
   const chunks: string[] = [];
@@ -288,15 +328,18 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
     chunks.push(currentChunk);
   }
 
-  // Try Google Translate first, then MyMemory, then offline dictionary fallback
+  // Try Google Translate first; on failure, flag offline and use offline dictionary for all remaining chunks
   const translateChunk = async (chunk: string): Promise<string> => {
     if (!chunk.trim()) return chunk;
+    if (isGtxOffline) {
+      return translateOffline(chunk, sl, tl);
+    }
 
-    // 1. Try Google Translate (free endpoint)
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(chunk)}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      // Short 2.5s timeout — if Google is slow/blocked on the host, fail over quickly to avoid request timeouts (502)
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
 
       const res = await fetch(url, {
         signal: controller.signal,
@@ -315,54 +358,10 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
       }
       throw new Error(`Google: ${res.status}`);
     } catch (err: any) {
-      console.warn("Google Translate failed:", err.message || err);
+      console.warn("Google Translate failed, switching to offline engine:", err.message || err);
+      isGtxOffline = true;
+      return translateOffline(chunk, sl, tl);
     }
-
-    // 2. Try MyMemory — needs explicit source language, so try French/Spanish/German/Italian
-    const candidateSources = sl === "auto"
-      ? ["fr", "es", "de", "it", "pt", "la", "nl", "ru", "ja", "zh", "ko", "ar"]
-      : [sl];
-
-    for (const candidateSrc of candidateSources) {
-      try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${candidateSrc}|${tl}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.responseData && data.responseData.translatedText) {
-            const translated = decodeURIComponent(data.responseData.translatedText);
-            // MyMemory returns a quot-tagged version on mismatch — filter those out
-            if (
-              translated &&
-              translated.trim() &&
-              translated !== chunk &&
-              !/INVALID/i.test(translated) &&
-              !/MYMEMORY WARNING/i.test(translated)
-            ) {
-              console.log(`MyMemory succeeded with source=${candidateSrc}`);
-              return translated;
-            }
-          }
-        }
-      } catch (err: any) {
-        // try next candidate
-      }
-    }
-
-    // 3. Fall back to offline dictionary (use sl if known, else try fr/es/de/it)
-    console.warn("All online APIs failed. Using offline dictionary.");
-    const offlineSources = sl === "auto" ? ["fr", "es", "de", "it", "la"] : [sl];
-    for (const candidateSrc of offlineSources) {
-      const result = translateOffline(chunk, candidateSrc, tl);
-      // If at least some words changed, accept this result
-      if (result !== chunk) return result;
-    }
-    return chunk;
   };
 
   const translatedChunks = await Promise.all(chunks.map(translateChunk));

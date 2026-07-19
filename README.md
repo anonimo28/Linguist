@@ -8,7 +8,7 @@ An offline-friendly book translation tool supporting PDF, TXT, and EPUB files. N
 
 - **Multi-format support** — Upload PDF, TXT, EPUB (with chapter navigation) and image files
 - **Offline translation** — Built-in dictionary and heuristic suffix rules for English, Spanish, French, German, Italian, and Latin
-- **Online fallback** — Automatic Google Translate API integration when offline mode is unavailable
+- **Online translation with safe fallback** — Uses Google Translate when available and falls back per failed chunk without disabling later requests
 - **Chapter-by-chapter** — EPUB chapter navigation with optional full-book sequential translation
 - **Export** — Download translated content as TXT, styled PDF, or standards-compliant EPUB
 - **OCR** — Image text extraction and translation (requires server-side OCR support)
@@ -41,7 +41,7 @@ npm start
 ## How It Works
 
 1. **Upload** a manuscript (PDF, EPUB, TXT, or image)
-2. **Select** target language
+2. **Select** the source language (or auto-detect it) and target language
 3. **Translate** — the engine first tries Google Translate (free, no key), then falls back to offline algorithmic translation
 4. **Export** — download the result as TXT, styled PDF, or EPUB
 

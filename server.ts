@@ -15,7 +15,42 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-let isGtxOffline = false;
+const languageAliases: Record<string, string> = {
+  auto: "auto",
+  english: "en",
+  spanish: "es",
+  french: "fr",
+  german: "de",
+  italian: "it",
+  portuguese: "pt",
+  russian: "ru",
+  chinese: "zh",
+  japanese: "ja",
+  korean: "ko",
+  arabic: "ar",
+  dutch: "nl",
+  greek: "el",
+  hindi: "hi",
+  turkish: "tr",
+  vietnamese: "vi",
+  latin: "la",
+  swedish: "sv",
+  polish: "pl",
+  ukrainian: "uk",
+};
+
+function getLanguageCode(language: string, fallback: "auto" | "en"): string {
+  const normalized = language.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (languageAliases[normalized]) return languageAliases[normalized];
+
+  // Google accepts ISO 639 language codes (and BCP 47 variants such as pt-BR).
+  if (/^[a-z]{2,3}(?:-[a-z]{2,4})?$/i.test(normalized)) return normalized;
+
+  throw new Error(
+    `Unsupported language "${language}". Select a listed language or use an ISO language code such as es, pt-BR, or ja.`
+  );
+}
 
 const wordDictionaries: Record<string, Record<string, string>> = {
   es: {
@@ -81,7 +116,7 @@ const wordDictionaries: Record<string, Record<string, string>> = {
     "non": "not", "sì": "yes", "più": "more", "meno": "less", "molto": "very", "bene": "well", "male": "badly/bad",
     "tutto": "all", "nulla": "nothing", "qualcosa": "something", "qualcuno": "someone",
     "uomo": "man", "donna": "woman", "bambino": "child", "amico": "friend", "casa": "house",
-    "libro": "book", "mondo": "world", "vida": "life", "tempo": "time", "giorno": "day", "notte": "night",
+    "libro": "book", "mondo": "world", "vita": "life", "tempo": "time", "giorno": "day", "notte": "night",
     "amore": "love", "lavoro": "work", "mano": "hand", "parte": "part", "luogo": "place", "città": "city",
     "paese": "country", "parola": "word", "storia": "story", "forza": "strength", "verità": "truth",
     "nuovo": "new", "grande": "large", "piccolo": "small", "buono": "good", "bello": "beautiful"
@@ -137,6 +172,15 @@ function translateOffline(text: string, src: string, tgt: string): string {
 
   if (src === tgt) return text;
 
+  const findTargetWord = (english: string, target: string): string | undefined => {
+    const dictionary = wordDictionaries[target];
+    if (!dictionary) return undefined;
+    const candidates = english.toLowerCase().split("/").map((item) => item.trim());
+    return Object.entries(dictionary).find(([, value]) =>
+      value.toLowerCase().split("/").map((item) => item.trim()).some((value) => candidates.includes(value))
+    )?.[0];
+  };
+
   const getWordTranslation = (word: string): string => {
     const lowerWord = word.toLowerCase();
 
@@ -148,14 +192,23 @@ function translateOffline(text: string, src: string, tgt: string): string {
 
     // 2. Direct dictionary translation (English to target)
     if (src === "en" && tgt !== "en") {
-      const dict = wordDictionaries[tgt];
-      if (dict) {
-        const found = Object.entries(dict).find(([k, v]) => v === lowerWord || v.split("/").includes(lowerWord));
-        if (found) return found[0];
+      const translated = findTargetWord(lowerWord, tgt);
+      if (translated) return translated;
+    }
+
+    // 3. Use English as a small pivot dictionary for offline language pairs.
+    // This keeps Spanish → French (and similar supported pairs) useful when
+    // the online service is unavailable instead of applying target suffixes to
+    // the original source word.
+    if (src !== "en" && tgt !== "en") {
+      const sourceEnglish = wordDictionaries[src]?.[lowerWord];
+      if (sourceEnglish) {
+        const translated = findTargetWord(sourceEnglish, tgt);
+        if (translated) return translated;
       }
     }
 
-    // 3. Heuristic / Suffix rules for other words:
+    // 4. Heuristic / Suffix rules for other words:
     if (tgt === "es") {
       if (lowerWord.endsWith("tion")) return lowerWord.slice(0, -4) + "ción";
       if (lowerWord.endsWith("tions")) return lowerWord.slice(0, -5) + "ciones";
@@ -248,46 +301,16 @@ function translateOffline(text: string, src: string, tgt: string): string {
 
 // Helper: Algorithmic translation using free Google Translate endpoint with rapid offline fallback
 async function translateTextGtx(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const langMap: Record<string, string> = {
-    "english": "en",
-    "spanish": "es",
-    "french": "fr",
-    "german": "de",
-    "italian": "it",
-    "portuguese": "pt",
-    "russian": "ru",
-    "chinese": "zh",
-    "japanese": "ja",
-    "korean": "ko",
-    "arabic": "ar",
-    "dutch": "nl",
-    "greek": "el",
-    "hindi": "hi",
-    "turkish": "tr",
-    "vietnamese": "vi",
-    "latin": "la",
-    "swedish": "sv",
-    "polish": "pl"
-  };
+  const sl = getLanguageCode(sourceLang, "auto");
+  const tl = getLanguageCode(targetLang, "en");
 
-  const getLangCode = (lang: string) => {
-    const l = lang.trim().toLowerCase();
-    if (langMap[l]) return langMap[l];
-    if (l.length === 2) return l;
-    return "auto";
-  };
-
-  const sl = getLangCode(sourceLang);
-  const tl = getLangCode(targetLang) === "auto" ? "en" : getLangCode(targetLang);
+  if (tl === "auto") {
+    throw new Error("A target language is required; automatic detection is only available for the source language.");
+  }
 
   // If source and target are same, no translation is needed
   if (sl === tl) {
     return text;
-  }
-
-  // If already flagged as offline, translate immediately locally (0ms per chunk)
-  if (isGtxOffline) {
-    return translateOffline(text, sl, tl);
   }
 
   // Divide text into manageable chunks of max 1800 characters to prevent URL size overflow
@@ -328,18 +351,15 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
     chunks.push(currentChunk);
   }
 
-  // Try Google Translate first; on failure, flag offline and use offline dictionary for all remaining chunks
+  // Try Google Translate for each chunk. A transient network failure should not
+  // permanently disable online translation for every later request.
   const translateChunk = async (chunk: string): Promise<string> => {
     if (!chunk.trim()) return chunk;
-    if (isGtxOffline) {
-      return translateOffline(chunk, sl, tl);
-    }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8_000);
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(chunk)}`;
-      const controller = new AbortController();
-      // Short 2.5s timeout — if Google is slow/blocked on the host, fail over quickly to avoid request timeouts (502)
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
 
       const res = await fetch(url, {
         signal: controller.signal,
@@ -358,13 +378,19 @@ async function translateTextGtx(text: string, sourceLang: string, targetLang: st
       }
       throw new Error(`Google: ${res.status}`);
     } catch (err: any) {
-      console.warn("Google Translate failed, switching to offline engine:", err.message || err);
-      isGtxOffline = true;
+      console.warn("Google Translate failed for one chunk; using the offline fallback:", err.message || err);
       return translateOffline(chunk, sl, tl);
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
-  const translatedChunks = await Promise.all(chunks.map(translateChunk));
+  // Sequential requests are friendlier to the public endpoint and keep chunks
+  // in order without triggering a rate-limit cascade on long books.
+  const translatedChunks: string[] = [];
+  for (const chunk of chunks) {
+    translatedChunks.push(await translateChunk(chunk));
+  }
   return translatedChunks.join("\n");
 }
 
@@ -389,7 +415,9 @@ app.post("/api/translate-text", async (req, res): Promise<any> => {
     }
   } catch (error: any) {
     console.error("Translation Error:", error);
-    res.status(500).json({ error: error.message || "An error occurred during translation." });
+    const message = error.message || "An error occurred during translation.";
+    const isLanguageInputError = message.startsWith("Unsupported language") || message.startsWith("A target language is required");
+    res.status(isLanguageInputError ? 400 : 500).json({ error: message });
   }
 });
 
@@ -418,7 +446,9 @@ app.post("/api/translate-pdf", async (req, res): Promise<any> => {
     }
   } catch (error: any) {
     console.error("PDF Translation Error:", error);
-    res.status(500).json({ error: error.message || "An error occurred during PDF translation." });
+    const message = error.message || "An error occurred during PDF translation.";
+    const isLanguageInputError = message.startsWith("Unsupported language") || message.startsWith("A target language is required");
+    res.status(isLanguageInputError ? 400 : 500).json({ error: message });
   }
 });
 

@@ -28,10 +28,17 @@ interface ReaderProps {
   onUpdateEpubChapters?: (bookId: string, chapters: EpubChapter[]) => void;
 }
 
+const LANGUAGE_OPTIONS = [
+  "English", "Spanish", "French", "German", "Italian", "Portuguese",
+  "Russian", "Chinese", "Japanese", "Korean", "Arabic", "Dutch",
+  "Greek", "Hindi", "Turkish", "Vietnamese", "Latin", "Swedish",
+  "Polish", "Ukrainian",
+];
+
 export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapters }: ReaderProps) {
   // Common states
   const [targetLang, setTargetLang] = useState<string>("English");
-  const [sourceLang, setSourceLang] = useState<string>("");
+  const [sourceLang, setSourceLang] = useState<string>("auto");
   const [customInstructions, setCustomInstructions] = useState<string>("");
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
@@ -365,7 +372,7 @@ export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapt
       if (book.type === "txt") {
         addLog("Analyzing plain text manuscript length and lines...");
         addLog("Injecting linguistic framework rules...");
-        addLog("Translating complete document to English...");
+        addLog(`Translating complete document to ${targetLang}...`);
         
         const result = await translateText({
           text: originalContent,
@@ -449,7 +456,7 @@ export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapt
           const activeChapter = book.chapters[activeChapterIndex];
           addLog(`Unpacking EPUB XML for: ${activeChapter.title}...`);
           addLog("Parsing syntax blocks...");
-          addLog("Translating chapter content to English... This might take a moment.");
+          addLog(`Translating chapter content to ${targetLang}... This might take a moment.`);
           
           const result = await translateText({
             text: activeChapter.content,
@@ -668,34 +675,46 @@ export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapt
           </div>
         )}
 
-        {/* Target Language Options */}
+        {/* Language Options */}
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 block">Linguistic Target</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              id="lang-en"
-              onClick={() => setTargetLang("English")}
-              className={`px-3 py-2 text-xs rounded-lg border transition-all text-center ${
-                targetLang === "English"
-                  ? "bg-zinc-900 border-cyan-500/40 text-cyan-400"
-                  : "bg-zinc-950/30 border-white/5 text-zinc-400 hover:text-white"
-              }`}
-            >
-              English (Global)
-            </button>
+          <label htmlFor="source-language" className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 block">Source Language</label>
+          <select
+            id="source-language"
+            value={sourceLang}
+            onChange={(event) => setSourceLang(event.target.value)}
+            className="w-full rounded-lg border border-white/5 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-cyan-500/40"
+          >
+            <option value="auto">Auto-detect</option>
+            {LANGUAGE_OPTIONS.map((language) => (
+              <option key={language} value={language}>{language}</option>
+            ))}
+          </select>
+
+          <label htmlFor="target-language" className="mt-2 text-[10px] uppercase tracking-[0.3em] text-zinc-500 block">Translation Target</label>
+          <select
+            id="target-language"
+            value={targetLang}
+            onChange={(event) => setTargetLang(event.target.value)}
+            className="w-full rounded-lg border border-cyan-500/25 bg-zinc-950/30 px-3 py-2 text-xs text-cyan-300 outline-none transition focus:border-cyan-500/60"
+          >
+            {LANGUAGE_OPTIONS.map((language) => (
+              <option key={language} value={language}>{language}</option>
+            ))}
+          </select>
+          <p className="text-[10px] leading-normal text-zinc-500">
+            Source detection is automatic by default. Choose it manually when the text mixes languages or uses short passages.
+          </p>
+          <div className="flex gap-2">
             <button
               id="lang-custom"
+              type="button"
               onClick={() => {
-                const lang = prompt("Enter custom language or dialect (e.g. Spanish, German, Shakespearean English):");
-                if (lang) setTargetLang(lang);
+                const code = prompt("Enter an ISO language code (for example: pt-BR, id, or he).");
+                if (code?.trim()) setTargetLang(code.trim());
               }}
-              className={`px-3 py-2 text-xs rounded-lg border transition-all text-center truncate ${
-                targetLang !== "English"
-                  ? "bg-zinc-900 border-cyan-500/40 text-cyan-400"
-                  : "bg-zinc-950/30 border-white/5 text-zinc-400 hover:text-white"
-              }`}
+              className="text-[10px] text-zinc-500 transition hover:text-cyan-400"
             >
-              {targetLang !== "English" ? targetLang : "Other Dialect..."}
+              Use another ISO language code…
             </button>
           </div>
         </div>
@@ -766,7 +785,7 @@ export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapt
                   : "bg-transparent border-transparent text-zinc-500 hover:text-white"
               }`}
             >
-              English output
+              Translation output
             </button>
           </div>
 
@@ -876,7 +895,7 @@ export default function Reader({ book, onTranslationCompleted, onUpdateEpubChapt
           {(activeTab === "translated" || activeTab === "sidebyside") && (
             <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
               <div className="px-5 py-2.5 bg-zinc-950/40 border-b border-white/5 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
-                <span>{targetLang !== "English" ? targetLang : "English (US)"} Translation Output</span>
+                <span>{targetLang} translation output</span>
                 <span>{translatedContent ? `${translatedContent.split(/\s+/).filter(Boolean).length} words` : "0 words"}</span>
               </div>
 

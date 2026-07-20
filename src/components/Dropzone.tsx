@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { Upload, BookOpen, AlertCircle, Image } from "lucide-react";
+import { Upload, AlertCircle, ArrowUpRight } from "lucide-react";
 import { BookFile, BookType } from "../types";
 import { parseEpub } from "../lib/epubParser";
 
@@ -148,21 +148,20 @@ export default function Dropzone({ onFileLoaded, isLoading, setIsLoading }: Drop
   };
 
   return (
-    <div className="w-full flex flex-col gap-4">
+    <div className="dropzone-wrap w-full flex flex-col gap-4">
       <div
         id="file-dropzone"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={triggerFileInput}
-        className={`relative group cursor-pointer border-2 border-dashed transition-all duration-300 rounded-3xl p-10 flex flex-col items-center justify-center text-center ${
+        className={`next-dropzone relative group cursor-pointer transition-all duration-300 flex flex-col justify-between ${
           isDragActive
-            ? "border-cyan-500 bg-cyan-950/10 scale-[1.01]"
-            : "border-zinc-800 bg-zinc-900/10 hover:border-zinc-700 hover:bg-zinc-900/20"
+            ? "is-dragging scale-[1.01]"
+            : ""
         } ${isLoading ? "pointer-events-none opacity-50" : ""}`}
       >
-        {/* Glowing backdrop decorative element */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-cyan-500/5 blur-[100px] rounded-full pointer-events-none transition-all duration-500 group-hover:bg-cyan-500/8"></div>
+        <div className="dropzone-grid" />
 
         <input
           id="manuscript-file-input"
@@ -173,28 +172,22 @@ export default function Dropzone({ onFileLoaded, isLoading, setIsLoading }: Drop
           className="hidden"
         />
 
-        <div className="relative z-10">
-          <div className="w-16 h-16 bg-zinc-900 border border-zinc-700 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl transition-transform duration-300 group-hover:scale-105">
+        <div className="relative z-10 flex w-full items-start justify-between">
+          <div className="upload-icon">
             {isLoading ? (
-              <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-stone-950 border-t-transparent" />
             ) : (
-              <Upload className="w-6 h-6 text-cyan-400" />
+              <Upload className="h-5 w-5" />
             )}
           </div>
+          <ArrowUpRight className="h-5 w-5 text-stone-600 transition group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-lime-300" />
+        </div>
 
-          <h3 className="text-2xl font-serif italic text-white mb-2">Ingest Manuscript</h3>
-          <p className="text-zinc-400 max-w-sm mx-auto text-sm leading-relaxed mb-4">
-            Drag & drop your files here, or click to browse
-          </p>
-
-          <div className="flex justify-center gap-3 text-xs uppercase tracking-widest text-zinc-500">
-            <span className="flex items-center gap-1 border border-zinc-800/80 px-2.5 py-1.5 rounded-lg bg-zinc-950/30">
-              <BookOpen className="w-3.5 h-3.5 text-cyan-500" /> PDF, EPUB, TXT
-            </span>
-            <span className="flex items-center gap-1 border border-zinc-800/80 px-2.5 py-1.5 rounded-lg bg-zinc-950/30">
-              <Image className="w-3.5 h-3.5 text-cyan-500" /> Image OCR
-            </span>
-          </div>
+        <div className="relative z-10 text-left">
+          <span className="drop-kicker">Start a new project</span>
+          <h3>{isLoading ? "Reading your manuscript…" : "Drop in your words."}</h3>
+          <p>Drag & drop a file, or click anywhere to browse.</p>
+          <div className="format-row"><span>PDF</span><span>EPUB</span><span>TXT</span><span>JPG / PNG</span><i>Up to 25 MB</i></div>
         </div>
       </div>
 

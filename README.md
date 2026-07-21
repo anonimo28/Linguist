@@ -2,6 +2,16 @@
 
 An offline-friendly book translation tool supporting PDF, TXT, and EPUB files. No API keys required — translation runs entirely via a direct algorithmic engine with a free Google Translate fallback.
 
+![Linguist desktop interface](docs/images/linguist-desktop.jpg)
+
+## Interface
+
+Linguist pairs a focused manuscript workspace with a responsive, editorial interface designed for long-form translation.
+
+<p align="center">
+  <img src="docs/images/linguist-mobile.jpg" alt="Linguist mobile interface" width="320" />
+</p>
+
 ---
 
 ## Features
